@@ -1,0 +1,770 @@
+######################################################################
+######################################################################
+#  Copyright Tsung-Hsien Wen, Cambridge Dialogue Systems Group, 2017 #
+######################################################################
+######################################################################
+[
+    {
+        "dial": [
+            {
+                "turn": 0, 
+                "usr": {
+                    "transcript": "I need to find an expensive restauant that's in the south section of the city.", 
+                    "slu": [
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "pricerange", 
+                                    "expensive"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "area", 
+                                    "south"
+                                ]
+                            ]
+                        }
+                    ]
+                }, 
+                "sys": {
+                    "sent": "There are several restaurants in the south part of town that serve expensive food. Do you have a cuisine preference?", 
+                    "DA": [
+                        "food"
+                    ]
+                }
+            }, 
+            {
+                "turn": 1, 
+                "usr": {
+                    "transcript": "No I don't care about the type of cuisine.", 
+                    "slu": [
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "pricerange", 
+                                    "expensive"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "food", 
+                                    "dontcare"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "area", 
+                                    "south"
+                                ]
+                            ]
+                        }
+                    ]
+                }, 
+                "sys": {
+                    "sent": "Chiquito Restaurant Bar is a Mexican restaurant located in the south part of town.", 
+                    "DA": []
+                }
+            }, 
+            {
+                "turn": 2, 
+                "usr": {
+                    "transcript": "What is their address?", 
+                    "slu": [
+                        {
+                            "act": "request", 
+                            "slots": [
+                                [
+                                    "slot", 
+                                    "address"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "pricerange", 
+                                    "expensive"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "area", 
+                                    "south"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "food", 
+                                    "dontcare"
+                                ]
+                            ]
+                        }
+                    ]
+                }, 
+                "sys": {
+                    "sent": "There address is 2G Cambridge Leisure Park Cherry Hinton Road Cherry Hinton, it there anything else I can help you with?", 
+                    "DA": [
+                    ]
+                }
+            }, 
+            {
+                "turn": 3, 
+                "usr": {
+                    "transcript": "What is the food type they serve ?", 
+                    "slu": [
+                        {
+                            "act": "request", 
+                            "slots": [
+                                [
+                                    "slot", 
+                                    "food"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "area", 
+                                    "south"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "food", 
+                                    "dontcare"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "pricerange", 
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                }, 
+                "sys": {
+                    "sent": "They serve Mexican food .", 
+                    "DA": []
+                }
+            }, 
+            {
+                "turn": 4, 
+                "usr": {
+                    "transcript": "Nope, that's what I was looking for. Thanks a lot!", 
+                    "slu": [
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "food", 
+                                    "dontcare"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "pricerange", 
+                                    "expensive"
+                                ]
+                            ]
+                        }, 
+                        {
+                            "act": "inform", 
+                            "slots": [
+                                [
+                                    "area", 
+                                    "south"
+                                ]
+                            ]
+                        }
+                    ]
+                }, 
+                "sys": {
+                    "sent": "Thank you very much for using the Cambridge Restaurant System.", 
+                    "DA": []
+                }
+            }
+        ], 
+        "dialogue_id": 0, 
+        "finished": true, 
+        "goal": {
+            "constraints": [
+                [
+                    "pricerange", 
+                    "expensive"
+                ], 
+                [
+                    "area", 
+                    "south"
+                ]
+            ], 
+            "request-slots": [
+                "address"
+            ], 
+            "text": "Task 11193: You are looking for an expensive restaurant and it should be in the south part of town. Make sure you get the address of the venue."
+        }
+    },{
+        "dial": [
+            {
+                "turn": 0,
+                "usr": {
+                    "transcript": "I am looking for a restaurant that is moderately priced and serves Cantonese food.",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "cantonese"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "moderate"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "There are no restaurants that serve Cantonese food in the moderate price range.",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 1,
+                "usr": {
+                    "transcript": "How about chinese type of food?",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "chinese"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "moderate"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "the Golden wok serves chinese food and is in the moderate price range.  Would you like their location? ",
+                    "DA": [
+                        "area"
+                    ]
+                }
+            },
+            {
+                "turn": 2,
+                "usr": {
+                    "transcript": "Their phone number please.",
+                    "slu": [
+                        {
+                            "act": "request",
+                            "slots": [
+                                [
+                                    "slot",
+                                    "phone"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "chinese"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "moderate"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Their phone number is 01223 350688.",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 3,
+                "usr": {
+                    "transcript": "What is the area?",
+                    "slu": [
+                        {
+                            "act": "request",
+                            "slots": [
+                                [
+                                    "slot",
+                                    "area"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "chinese"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "moderate"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "it is located in the north part of town",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 4,
+                "usr": {
+                    "transcript": "Thank you for your help. Good bye.",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "chinese"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "moderate"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Goodbye.",
+                    "DA": []
+                }
+            }
+        ],
+        "dialogue_id": 1,
+        "finished": true,
+        "goal": {
+            "constraints": [
+                [
+                    "food",
+                    "chinese"
+                ],
+                [
+                    "pricerange",
+                    "moderate"
+                ]
+            ],
+            "request-slots": [
+                "phone"
+            ],
+            "text": "Task 02790: You want to find a moderately priced restaurant and it should serve cantonese food. If there is no such venue how about chinese type of food. You want to know the phone number of the venue."
+        }
+    },
+    {
+        "dial": [
+            {
+                "turn": 0,
+                "usr": {
+                    "transcript": "Hello, I am looking for an expensive restaurant that serves Australian food. ",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "australian"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "There are no records matching your request for an expensive restaurant serving Australian food. May I help you find a different restaurant? ",
+                    "DA": [
+                        "food"
+                    ]
+                }
+            },
+            {
+                "turn": 1,
+                "usr": {
+                    "transcript": "What about British food?",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "british"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "There are six restaurants matching your query. One of them is travellers rest.",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 2,
+                "usr": {
+                    "transcript": "Could I have the phone number for one of the restaurants?",
+                    "slu": [
+                        {
+                            "act": "request",
+                            "slots": [
+                                [
+                                    "slot",
+                                    "phone"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "british"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "there phone number is 01223352500 is there anything else i can help you with?",
+                    "DA": [
+                    ]
+                }
+            },
+            {
+                "turn": 3,
+                "usr": {
+                    "transcript": "Thanks, goodbye.",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "british"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Thank you, goodbye.",
+                    "DA": []
+                }
+            }
+        ],
+        "dialogue_id": 2,
+        "finished": true,
+        "goal": {
+            "constraints": [
+                [
+                    "food",
+                    "british"
+                ],
+                [
+                    "pricerange",
+                    "expensive"
+                ]
+            ],
+            "request-slots": [
+                "phone"
+            ],
+            "text": "Task 10230: You are looking for an expensive restaurant and it should serve australian food. If there is no such venue how about british type of food. You want to know the phone number of the venue."
+        }
+    },
+    {
+        "dial": [
+            {
+                "turn": 0,
+                "usr": {
+                    "transcript": "I am wanting an expensive restaurant that offers African food. What is their number?",
+                    "slu": [
+                        {
+                            "act": "request",
+                            "slots": [
+                                [
+                                    "slot",
+                                    "phone"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "african"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Where are you located? I see two that might work but Id like to offer the closest.",
+                    "DA": [
+                        "area"
+                    ]
+                }
+            },
+            {
+                "turn": 1,
+                "usr": {
+                    "transcript": "I do not care about the area of town.",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "african"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "area",
+                                    "dontcare"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Bedouin is an expensive African restaurant in the city centre. ",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 2,
+                "usr": {
+                    "transcript": "That sounds good, what is their number so that I can ring them?",
+                    "slu": [
+                        {
+                            "act": "request",
+                            "slots": [
+                                [
+                                    "slot",
+                                    "phone"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "african"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "area",
+                                    "dontcare"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "Their phone number is 01223 367660.",
+                    "DA": []
+                }
+            },
+            {
+                "turn": 3,
+                "usr": {
+                    "transcript": "Great! Thank you. Good Bye. ",
+                    "slu": [
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "food",
+                                    "african"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "pricerange",
+                                    "expensive"
+                                ]
+                            ]
+                        },
+                        {
+                            "act": "inform",
+                            "slots": [
+                                [
+                                    "area",
+                                    "dontcare"
+                                ]
+                            ]
+                        }
+                    ]
+                },
+                "sys": {
+                    "sent": "You're welcome, goodbye.",
+                    "DA": []
+                }
+            }
+        ],
+        "dialogue_id": 3,
+        "finished": true,
+        "goal": {
+            "constraints": [
+                [
+                    "food",
+                    "african"
+                ],
+                [
+                    "pricerange",
+                    "expensive"
+                ]
+            ],
+            "request-slots": [
+                "phone"
+            ],
+            "text": "Task 01215: You want to find an expensive restaurant and it should serve african food. You want to know the phone number."
+        }
+    }
+]

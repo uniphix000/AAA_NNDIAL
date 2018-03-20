@@ -970,6 +970,7 @@ class DataReader(object):
         print '\tCorpus VMC       : %2.2f%%' % (vmc/float(len(self.dialog))*100)
         print '\tCorpus Success   : %2.2f%%' % (success/float(len(self.dialog))*100)
 
+
 class DataSplit(object):  # 用于划分数据
     # data split helper , for split dataset into train/valid/test
     def __init__(self,split):
