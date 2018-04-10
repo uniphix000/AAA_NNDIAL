@@ -24,6 +24,8 @@ def main():
     cmd.add_argument('--embed_size', type = int, default=200)
     cmd.add_argument('--hidden_size', type = int, default=200)
     cmd.add_argument('--max_epoch', type = int, default=200)
+    cmd.add_argument('--encoder_type', type = str, default='lstm')
+
 
 
 
