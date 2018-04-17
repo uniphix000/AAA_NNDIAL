@@ -30,12 +30,15 @@ class Network(nn.Module):
         # parameters for belief tracker
         self.reqseg = self.datareader.reqseg
         self.infoseg = self.datareader.infoseg
+        self.chgseg = [0, 1]
 
-        # informable tracker
-        print (self.infoseg)
+        # three trackers
         self.info_tracker = Info_Tracker(self.infoseg, self.voc_size, self.hidden_size)
+        self.req_tracker = Req_Tracker(self.reqseg, self.voc_size, self.hidden_size)
+        self.chg_tracker = Req_Tracker(self.chgseg, self.voc_size, self.hidden_size)
 
-
+        # loss function
+        self.loss = nn.CrossEntropyLoss()
 
     def train(self):
         for i in range(self.args.max_epoch):
@@ -107,6 +110,9 @@ class Network(nn.Module):
                     belief_tm1, masked_target_tm1, masked_target_len_tm1,
                     target_feat_tm1, posterior_tm1)
             '''
+            # loss
+            loss = 0
+
             # 抽取一轮数据
             data_piece = self._data_iterator(data, i)
 
@@ -119,6 +125,7 @@ class Network(nn.Module):
             self.encoder.forward(masked_source)
 
             # belief tracking
+            # informable slots
             belief_t = []
             for j in range(len(self.info_tracker.slots_box)):
 
@@ -132,13 +139,56 @@ class Network(nn.Module):
                 value_target_position = tarfeat[1][self.infoseg[j]:self.infoseg[j+1]]
 
                 # tracking
-                self.info_tracker.slots_box[j].forward(slot_belief_value, masked_source, masked_target, \
+                new_slot_belief_value = self.info_tracker.slots_box[j].forward(slot_belief_value, masked_source, masked_target, \
                                                        masked_source_len, masked_target_len,\
                                                        slot_source_position, value_source_position,\
                                                        slot_target_position, value_target_position)
 
+                slot_belief_label = variable_tensor(inf_trk_label[self.infoseg[j]:self.infoseg[j+1]], 'Long')
 
+                loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+                                                                                                         # 而是接收正确的indices
+                belief_t.append(slot_belief_label)
 
+            inf_belief_t = pre_belief
+
+            # requestable slots
+            for k in range(len(self.reqseg)-1):
+
+                # current feature idx
+                bn = self.infoseg[-1] + 2*k  # 排列在infor之后，每个占两位
+
+                # 解码位置信息
+                slot_source_position = srcfeat[0][bn]
+                value_source_position = srcfeat[1][bn]
+                slot_target_position = tarfeat[0][bn]
+                value_target_position = tarfeat[1][bn]
+
+                # tracking
+                new_slot_belief_value = self.req_tracker.slots_box[k].forward(masked_source, masked_target, masked_source_len,\
+                                                                              masked_target_len_tm1, slot_source_position,\
+                                                                              value_source_position, slot_target_position,\
+                                                                              value_target_position)
+
+                slot_belief_label = variable_tensor(req_trk_label[2*k:2*(k+1)], 'Long')
+
+                loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+
+                belief_t.append(slot_belief_label)
+
+            # offer-change tracker 是否变更了候选
+            minus_1 = [-1]
+            new_slot_belief_value = self.chg_tracker.slots_box[0].forward(masked_source, masked_target, masked_source_len,\
+                                                                              masked_target_len_tm1, minus_1, minus_1,\
+                                                                              minus_1, minus_1)
+
+            slot_belief_label = variable_tensor(change, 'Long')
+
+            loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+
+            belief_t.append(change)
+
+            print loss
 
 
 
@@ -202,16 +252,19 @@ class CNNInfoTracker(nn.Module):
         self.Wt = nn.Linear(5*self.hidden_size, self.belief_size)
         self.Wv = nn.Linear(1, self.belief_size)
         self.Wn = nn.Linear(1, self.belief_size)
-        #self.
+        self.W = nn.Linear(self.belief_size, 1)
+        self.B = nn.Linear(1, 1)
+
+        # softmax
+        self.softmax = nn.Softmax()
 
         # 初始化CNN
         self.source_CNN = CNNEncoder(self.input_vocsize, self.hidden_size)
         self.target_CNN = CNNEncoder(self.output_vocsize, self.hidden_size)
 
-        #
-
     def forward(self, slot_belief_value, source_input, pre_target_input, source_lens, pre_target_lens,
                 slot_source_position, value_source_position, slot_target_position, value_target_position):
+
         # CNN encoder
         source_ngram_feature, source_utterance_feature = self.source_CNN.forward(source_input, source_lens)
         pre_target_ngram_feature, pre_target_utterance_feature = self.target_CNN.forward(pre_target_input, pre_target_lens)
@@ -225,7 +278,9 @@ class CNNInfoTracker(nn.Module):
         assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
         value_num = len(slot_source_position)
 
-        for value in range(value_num):                                            # fixme 这里的-1到底该怎么替换
+        g_j = []
+        for value in range(value_num-1):                                            # fixme 这里的-1到底该怎么替换
+            # source features
             slot_source_ngram_feature_value = torch.sum(\
                 source_ngram_feature[:,self._normalize_slice(slot_source_position, \
                                                              source_ngram_feature.size()[1], value),:], 1)
@@ -246,14 +301,19 @@ class CNNInfoTracker(nn.Module):
             target_feature = torch.cat([slot_target_ngram_feature_value, \
                                         value_target_ngram_feature_value, \
                                         pre_target_utterance_feature], 1)  # (1, 5*h_s)
-            print (self.Ws(source_feature))
-            print slot_belief_value[:-1];exit()
-            print self.Wv()
-            exit()
-            g_jv = F.sigmoid( self.Ws(source_feature) + self.Wt(target_feature) + self.Wv(slot_belief_value[:-1]) +\
-                self.Wn(slot_belief_value[-1]))
-            print g_jv.size()
+            # fixme 怎么构造元素乘
+            tmp_0 = variable_tensor([1], 'Float')
+            tmp_1 = variable_tensor([1], 'Float')
+            tmp_2 = variable_tensor([1], 'Float')
+            g_jv = self.W (F.sigmoid( self.Ws(source_feature) + self.Wt(target_feature) +\
+                                       slot_belief_value[value] * self.Wv(tmp_0) +\
+                slot_belief_value[-1] * self.Wn(tmp_1)))
+            g_j.append(g_jv)
+        g_j = torch.cat(g_j)
+        g_j = torch.cat([g_j, self.B(tmp_2)])
+        b_j = self.softmax(g_j.view(1, -1))
 
+        return b_j
 
     def _normalize_slice(self, position_info, replace, value):
         new_list = []
@@ -276,18 +336,95 @@ class Req_Tracker(nn.Module):
 
 
 class CNNReqTracker(nn.Module):
-    def __init__(self):
+    def __init__(self, input_vocsize, output_vocsize, hidden_size):
         super(CNNReqTracker, self).__init__()
+                # parameters
+        self.belief_size = 4  # fixme ???
         self.input_vocsize = input_vocsize
         self.output_vocsize = output_vocsize
         self.hidden_size = hidden_size
+
+        # Linear
+        self.Ws = nn.Linear(5*self.hidden_size, self.belief_size)
+        self.Wt = nn.Linear(5*self.hidden_size, self.belief_size)
+        self.Wv = nn.Linear(1, self.belief_size)
+        self.Wn = nn.Linear(1, self.belief_size)
+        self.W = nn.Linear(self.belief_size, 1)
+        self.B = nn.Linear(1, 1)
+
+        # softmax
+        self.softmax = nn.Softmax()
 
         # 初始化CNN
         self.source_CNN = CNNEncoder(self.input_vocsize, self.hidden_size)
         self.target_CNN = CNNEncoder(self.output_vocsize, self.hidden_size)
 
-        #
+    def forward(self, source_input, pre_target_input, source_lens, pre_target_lens, slot_source_position,\
+                value_source_position, slot_target_position,value_target_position):
 
+        # CNN encoder
+        source_ngram_feature, source_utterance_feature = self.source_CNN.forward(source_input, source_lens)
+        pre_target_ngram_feature, pre_target_utterance_feature = self.target_CNN.forward(pre_target_input, pre_target_lens)
+
+        # padding
+        source_ngram_feature = torch.cat([source_ngram_feature, torch.zeros(1, 1, source_ngram_feature.size()[2])], 1)
+        pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, torch.zeros(1, 1, \
+                                                                                    pre_target_ngram_feature.size()[2])], 1)
+
+        # new belief 对每个value的概率进行跟更新
+        assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
+        value_num = len(slot_source_position)
+
+        # source features
+        slot_source_ngram_feature_value = torch.sum(\
+                source_ngram_feature[:,self._normalize_slice(slot_source_position, \
+                                                             source_ngram_feature.size()[1]),:], 1)
+        value_source_ngram_feature_value = torch.sum(\
+            source_ngram_feature[:,self._normalize_slice(value_source_position, \
+                                                         source_ngram_feature.size()[1]),:], 1)
+        source_feature = torch.cat([slot_source_ngram_feature_value, \
+                                    value_source_ngram_feature_value, \
+                                    source_utterance_feature], 1)  # (1, 5*h_s)
+
+        # target features
+        slot_target_ngram_feature_value = torch.sum(\
+            pre_target_ngram_feature[:,self._normalize_slice(slot_target_position, \
+                                                             pre_target_ngram_feature.size()[1]),:], 1)
+        value_target_ngram_feature_value = torch.sum(\
+            pre_target_ngram_feature[:,self._normalize_slice(value_target_position, \
+                                                             pre_target_ngram_feature.size()[1]),:], 1)
+        target_feature = torch.cat([slot_target_ngram_feature_value, \
+                                    value_target_ngram_feature_value, \
+                                    pre_target_utterance_feature], 1)  # (1, 5*h_s)
+
+        # fixme 怎么构造元素乘
+        tmp_0 = variable_tensor([1], 'Float')
+        tmp_1 = variable_tensor([1], 'Float')
+        tmp_2 = variable_tensor([1], 'Float')
+
+        g_j = self.W (F.sigmoid( self.Ws(source_feature) + self.Wt(target_feature)))
+        g_j = torch.cat(g_j)
+        g_j = torch.cat([g_j, self.B(tmp_2)])
+        b_j = self.softmax(g_j.view(1, -1))
+
+        return b_j
+
+
+    def _normalize_slice(self, position_info, replace, value=None):
+        new_list = []
+        if value == None:
+            for n in position_info:
+                if n != -1:
+                    new_list.append(n)
+                else:
+                    new_list.append(replace-1)
+        else:
+            for n in position_info[value]:
+                if n != -1:
+                    new_list.append(n)
+                else:
+                    new_list.append(replace-1)
+        return new_list
 
 class CNNEncoder(nn.Module):
     def __init__(self, voc_size, hidden_size):
