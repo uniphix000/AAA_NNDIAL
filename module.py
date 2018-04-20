@@ -60,6 +60,8 @@ class Network(nn.Module):
         self._cuda_model()
         for i in range(self.args.max_epoch):
             logging.info('--------------------Round {0}---------------------'.format(i))
+            total_loss = 0
+            count = 0
             while True:
                 data = self.datareader.read(mode='train')
                 if data == None:
@@ -76,13 +78,16 @@ class Network(nn.Module):
                 self._zero_grad()
 
                 dialogue_loss = self.recurr(data)
-                print dialogue_loss
+
                 # backward
                 dialogue_loss.backward()
 
+                total_loss += dialogue_loss.data[0]
+                count += 1
+
                 # step
                 self.optimizer.step()
-
+            logging.info('avg_loss: {0}'.format(total_loss/count))
 
     def _set_model_satate(self, state):
         if state == 'train':
