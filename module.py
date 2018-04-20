@@ -24,7 +24,7 @@ class Network(nn.Module):
         self.datareader = datareader
         self.voc_size = len(self.datareader.vocab)
 
-        # intent encoder
+        # init intent encoder
         self.encoder = Encoder(self.args.embed_size, self.hidden_size, self.voc_size)
 
         # parameters for belief tracker
@@ -32,7 +32,7 @@ class Network(nn.Module):
         self.infoseg = self.datareader.infoseg
         self.chgseg = [0, 1]
 
-        # three trackers
+        # init three trackers
         self.info_tracker = Info_Tracker(self.infoseg, self.voc_size, self.hidden_size)
         self.req_tracker = Req_Tracker(self.reqseg, self.voc_size, self.hidden_size)
         self.chg_tracker = Req_Tracker(self.chgseg, self.voc_size, self.hidden_size)
@@ -40,7 +40,24 @@ class Network(nn.Module):
         # loss function
         self.loss = nn.CrossEntropyLoss()
 
+        # belief size
+        belief_size = 2*len(self.reqseg) + 3*(len(self.infoseg) - 1)  # 23
+
+        # init policy
+        # self.args.policy_flag
+        self.policy = Policy(belief_size, 6, self.hidden_size, self.hidden_size)
+
+        # init decoder
+        self.decoder = Decoder(self.policy, self.voc_size, self.hidden_size)
+
+        # optimizer
+        self.optimizer = Opitmzier(self.encoder, self.info_tracker, self.req_tracker, \
+                                  self.chg_tracker, self.policy, self.decoder, self.args.lr)
+
+
     def train(self):
+        self._set_model_satate('train')
+        self._cuda_model()
         for i in range(self.args.max_epoch):
             logging.info('--------------------Round {0}---------------------'.format(i))
             while True:
@@ -54,7 +71,63 @@ class Network(nn.Module):
                 snapshot_8, change_9, goal_10, inf_trk_label_11, req_trk_label_12,\
                 db_degree_13, srcfeat_14, tarfeat_15, finished_16, utt_group_17 = data  # 除了goal和finished以外长度都为对话轮次长
                 '''
-                self.recurr(data)
+
+                # zero_grad
+                self._zero_grad()
+
+                dialogue_loss = self.recurr(data)
+                print dialogue_loss
+                # backward
+                dialogue_loss.backward()
+
+                # step
+                self.optimizer.step()
+
+
+    def _set_model_satate(self, state):
+        if state == 'train':
+            self.encoder.train()
+            self.info_tracker.train()
+            self.req_tracker.train()
+            self.chg_tracker.train()
+            self.policy.train()
+            self.decoder.train()
+        elif state == 'eval':
+            self.encoder.eval()
+            self.info_tracker.eval()
+            self.req_tracker.eval()
+            self.chg_tracker.eval()
+            self.policy.eval()
+            self.decoder.eval()
+
+
+    def _cuda_model(self):
+        self.encoder = self._cuda_model_one(self.encoder)
+        self.decoder = self._cuda_model_one(self.decoder)
+        for model in self.info_tracker.slots_box:
+            model = self._cuda_model_one(model)
+        for model in self.req_tracker.slots_box:
+            model = self._cuda_model_one(model)
+        for model in self.chg_tracker.slots_box:
+            model = self._cuda_model_one(model)
+        self.policy = self._cuda_model_one(self.policy)
+
+
+    def _cuda_model_one(self, model):
+        return model.cuda() if use_cuda else model
+
+
+    def _zero_grad(self):
+        self.encoder.zero_grad()
+        self.decoder.zero_grad()
+        for model in self.info_tracker.slots_box:
+            model.zero_grad()
+        for model in self.req_tracker.slots_box:
+            model.zero_grad()
+        for model in self.chg_tracker.slots_box:
+            model.zero_grad()
+        self.policy.zero_grad()
+        self.decoder.zero_grad()
 
 
     def _data_iterator(self, data, i):
@@ -98,7 +171,8 @@ class Network(nn.Module):
         belief_tm1, masked_target_tm1, masked_target_len_tm1,
                     target_feat_tm1, posterior_tm1
         '''
-
+        # dialogue_loss
+        dialogue_loss = 0
         for i in range(turn_number):
             '''
             (source_t, target_t, source_len_t, target_len_t,
@@ -122,7 +196,7 @@ class Network(nn.Module):
             db_degree, srcfeat, tarfeat, utt_group = data_piece
 
             # encode
-            self.encoder.forward(masked_source)
+            intent_t = self.encoder.forward(masked_source)
 
             # belief tracking
             # informable slots
@@ -147,8 +221,10 @@ class Network(nn.Module):
                 slot_belief_label = variable_tensor(inf_trk_label[self.infoseg[j]:self.infoseg[j+1]], 'Long')
 
                 loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
-                                                                                                         # 而是接收正确的indices
-                belief_t.append(slot_belief_label)
+                                                                                                          # 而是接收正确的indices
+                # summary
+                tmp = [torch.sum(slot_belief_label[:-2]), slot_belief_label[-2], slot_belief_label[-1]]
+                belief_t.append(torch.cat(tmp, 0))
 
             inf_belief_t = pre_belief
 
@@ -172,7 +248,7 @@ class Network(nn.Module):
 
                 slot_belief_label = variable_tensor(req_trk_label[2*k:2*(k+1)], 'Long')
 
-                loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+                #loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
 
                 belief_t.append(slot_belief_label)
 
@@ -184,13 +260,17 @@ class Network(nn.Module):
 
             slot_belief_label = variable_tensor(change, 'Long')
 
-            loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+            #loss += self.loss(new_slot_belief_value.view(1, -1), torch.max(slot_belief_label, 0)[1])  # 交叉熵不接受one-hot向量
+            belief_t.append(variable_tensor(change, 'Long'))
+            belief_t = torch.cat(belief_t, 0).float()
+            db_degree_t = variable_tensor(db_degree[-6:], 'Float')
 
-            belief_t.append(change)
+            # policy and decode
+            loss += self.decoder.decode(masked_source, masked_source_len, masked_target, masked_target_len, intent_t, belief_t,\
+                                 db_degree_t, utt_group, snapshot)
+            dialogue_loss += loss
 
-            print loss
-
-
+        return dialogue_loss
 
 
 class Encoder(nn.Module):
@@ -205,6 +285,8 @@ class Encoder(nn.Module):
 
     def forward(self, input):
         last_hidden = self.sort_batch(input)
+        last_hidden = torch.sum(last_hidden, 0) * 0.5  # (1, h_s)
+        return last_hidden
 
     def sort_batch(self, input):  # Todo:使用padpackage
         """
@@ -231,6 +313,7 @@ class Info_Tracker(nn.Module):
         for i in range(len(self.info_seg)-1):
             belief_size = self.info_seg[i+1] - self.info_seg[i]
             self.slots_box.append(CNNInfoTracker(belief_size, self.voc_size, self.voc_size, self.hidden_size))
+
 
 
 class CNNInfoTracker(nn.Module):
@@ -270,9 +353,9 @@ class CNNInfoTracker(nn.Module):
         pre_target_ngram_feature, pre_target_utterance_feature = self.target_CNN.forward(pre_target_input, pre_target_lens)
 
         # padding
-        source_ngram_feature = torch.cat([source_ngram_feature, torch.zeros(1, 1, source_ngram_feature.size()[2])], 1)
-        pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, torch.zeros(1, 1, \
-                                                                                    pre_target_ngram_feature.size()[2])], 1)
+        zero_tensor = variable_tensor(torch.zeros(1, 1, source_ngram_feature.size()[2]), 'Float')
+        source_ngram_feature = torch.cat([source_ngram_feature, zero_tensor], 1)
+        pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, zero_tensor], 1)
 
         # new belief 对每个value的概率进行跟更新
         assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
@@ -324,6 +407,7 @@ class CNNInfoTracker(nn.Module):
                 new_list.append(replace-1)
         return new_list
 
+
 class Req_Tracker(nn.Module):
     def __init__(self, req_seg, voc_size, hidden_size):
         super(Req_Tracker, self).__init__()
@@ -367,9 +451,9 @@ class CNNReqTracker(nn.Module):
         pre_target_ngram_feature, pre_target_utterance_feature = self.target_CNN.forward(pre_target_input, pre_target_lens)
 
         # padding
-        source_ngram_feature = torch.cat([source_ngram_feature, torch.zeros(1, 1, source_ngram_feature.size()[2])], 1)
-        pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, torch.zeros(1, 1, \
-                                                                                    pre_target_ngram_feature.size()[2])], 1)
+        zero_tensor = variable_tensor(torch.zeros(1, 1, source_ngram_feature.size()[2]), 'Float')
+        source_ngram_feature = torch.cat([source_ngram_feature, zero_tensor], 1)
+        pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, zero_tensor], 1)
 
         # new belief 对每个value的概率进行跟更新
         assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
@@ -426,6 +510,7 @@ class CNNReqTracker(nn.Module):
                     new_list.append(replace-1)
         return new_list
 
+
 class CNNEncoder(nn.Module):
     def __init__(self, voc_size, hidden_size):
         super(CNNEncoder, self).__init__()
@@ -464,6 +549,92 @@ class CNNEncoder(nn.Module):
         input = input.squeeze(0)[:,:,1:-1]  # (1, l, h_s)
         input = F.tanh(torch.sum(F.avg_pool2d(input, (3,1)), 1)) if pool else input  # (l, h_s)
         return input
+
+
+class Policy(nn.Module):
+    def __init__(self, belief_size, degree_size, ihidden_size, ohidden_size):
+        super(Policy, self).__init__()
+
+        # parameters
+        self.Wba = nn.Linear(belief_size, ohidden_size)
+        self.Wda = nn.Linear(degree_size, ohidden_size)
+        self.Wia = nn.Linear(ihidden_size, ohidden_size)
+
+
+    def encode(self, belief_t, degree_t, intent_t):  # 公式(8)
+        return F.tanh( self.Wba(belief_t) + self.Wda(degree_t) + self.Wia(intent_t))
+
+
+class Decoder(nn.Module):
+    def __init__(self, policy, voc_size, hidden_size):
+        super(Decoder, self).__init__()
+
+        # policy
+        self.policy = policy
+        # parameters
+        self.embed = nn.Embedding(voc_size, hidden_size)
+        self.lstm = nn.LSTM(2*hidden_size, hidden_size, batch_first=True)
+        self.linear = nn.Linear(hidden_size, voc_size)
+        self.softmax = nn.Softmax()
+        self.loss = nn.CrossEntropyLoss()
+
+
+    def decode(self, masked_source_t, masked_source_len_t, masked_target_t, masked_target_len_t, intent_t, \
+               belief_t, degree_t, utt_group_t, snapshot_t):  # sample?
+
+        # loss
+        loss = 0
+        # action
+        action_t = self.policy.encode(belief_t, degree_t, intent_t)
+
+        # init input
+        input_word = F.sigmoid(self.embed(variable_tensor([0], 'Long')))  # fixme 选什么做初始化
+        #input_word = F.sigmoid(self.embed(masked_source_t[0]))
+
+        # recur
+        for i in range(len(masked_source_t)):
+            h, _ = self.lstm(torch.cat([input_word, action_t], 1).unsqueeze(1))
+            output = self.softmax(self.linear(h).squeeze(0))
+            loss += self.loss(output, masked_target_t[i])
+            input_word = F.sigmoid(self.embed(masked_source_t[i]))
+
+        return loss
+
+
+class Opitmzier(nn.Module):
+    def __init__(self, encoder, info_tracker, req_tracker, chg_tracker, policy, deocder, lr):
+        super(Opitmzier, self).__init__()
+        self.lr = lr
+        self.encoder_optimier = self._init_opitmizer(encoder)
+        self.info_tracker_optimizer = []
+        self.req_tracker_optimizer = []
+        self.chg_tracker_optimizer = []
+        for slot in info_tracker.slots_box:
+            self.info_tracker_optimizer.append(self._init_opitmizer(slot))
+        for slot in req_tracker.slots_box:
+            self.req_tracker_optimizer.append(self._init_opitmizer(slot))
+        for slot in chg_tracker.slots_box:
+            self.chg_tracker_optimizer.append(self._init_opitmizer(slot))
+        self.policy_optimier = self._init_opitmizer(policy)
+        self.deocder_optimier = self._init_opitmizer(deocder)
+
+    def _init_opitmizer(self, model):
+        optimizer = optim.SGD(
+          model.parameters(),
+          lr = self.lr
+        )
+        return optimizer
+
+    def step(self):
+        self.encoder_optimier.step()
+        for optimizer in self.info_tracker_optimizer:
+            optimizer.step()
+        for optimizer in self.req_tracker_optimizer:
+            optimizer.step()
+        for optimizer in self.chg_tracker_optimizer:
+            optimizer.step()
+        self.policy_optimier.step()
+        self.deocder_optimier.step()
 
 
 def variable_tensor(list, type=None):
