@@ -873,10 +873,10 @@ class DataReader(object):
 
                 # user side
                 words = self.delexicalise(turn['usr']['transcript']).split()
-                mwords,words,_,_,_ = self.extractSeq(turn['sys']['sent'],\
+                mwords,words,_,_,_ = self.extractSeq(turn['usr']['transcript'],\
                     type='source',index=False)
                 ivocab.extend(mwords)
-                #ivocab.extend(words)
+                ivocab.extend(words)
                 """
                 for hyp in t['usr']['asr']:
                     words = self.delexicalise(normalize(hyp['asr-hyp'])).split()

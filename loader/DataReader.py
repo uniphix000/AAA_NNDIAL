@@ -901,10 +901,10 @@ class DataReader(object):
                 
                 # user side
                 words = self.delexicalise(turn['usr']['transcript']).split()
-                mwords,words,_,_,_ = self.extractSeq(turn['sys']['sent'],\
+                mwords,words,_,_,_ = self.extractSeq(turn['usr']['transcript'],\
                     type='source',index=False)
                 ivocab.extend(mwords)
-                #ivocab.extend(words)
+                ivocab.extend(words)
                 """
                 for hyp in t['usr']['asr']:
                     words = self.delexicalise(normalize(hyp['asr-hyp'])).split()
@@ -945,7 +945,7 @@ class DataReader(object):
         # the whole vocab
         self.vocab = ['<unk>','</s>','<slot>','<value>'] + \
                 list(set(self.inputvocab[4:]).union(self.outputvocab[2:]))
-       
+        print self.vocab;exit()
         # create snapshot dimension
         self.snapshots = ['OFFERED','CHANGED']
         for w in self.outputvocab:
