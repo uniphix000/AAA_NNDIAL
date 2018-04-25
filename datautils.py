@@ -824,6 +824,14 @@ class DataReader(object):
             self.inputvocab.extend( ['[SLOT_'+s.upper()+']','[VALUE_'+s.upper()+']'])
             self.outputvocab.extend(['[SLOT_'+s.upper()+']','[VALUE_'+s.upper()+']'])
 
+        # init inputvocab with requstable values
+        for s,vs in self.s2v['requestable'].iteritems():
+            for v in vs:
+                if v=='none': continue
+                self.inputvocab.extend(v.split())
+            self.inputvocab.extend( ['[SLOT_'+s.upper()+']','[VALUE_'+s.upper()+']'])
+            self.outputvocab.extend(['[SLOT_'+s.upper()+']','[VALUE_'+s.upper()+']'])
+
         # add every word in semidict into vocab
         for s in self.semidict.keys():
             for v in self.semidict[s]:
@@ -1017,4 +1025,9 @@ class Configuration(object):
         self.mode = args.mode
         self.policy = parser.get('ply','policy')
         self.latent = parser.getint('ply','latent') if self.policy=='latent' else 0
+        self.topk           = parser.getint('gen','topk')
+        self.beamwidth      = parser.getint('gen','beamwidth')
+        self.repeat_penalty = parser.get('gen','repeat_penalty')
+        self.token_reward   = parser.getboolean('gen','token_reward')
+        self.alpha          = parser.getfloat('gen','alpha')
 

@@ -9,6 +9,13 @@ from torch import optim
 from torch.autograd import Variable
 import logging
 import copy
+import itertools
+from Queue import PriorityQueue
+from ConfigParser import SafeConfigParser
+import numpy as np
+from copy import deepcopy
+import operator
+
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -16,9 +23,10 @@ logging.basicConfig(level=logging.INFO,
 use_cuda = torch.cuda.is_available()
 
 class Network(nn.Module):
-    def __init__(self, args, datareader):
+    def __init__(self, args, config, datareader):
         super(Network, self).__init__()
         self.args = args
+        self.config = config
         self.hidden_size = self.args.hidden_size
         self.encoder_type = args.encoder_type  # 默认为lstm #Todo CNN可以尝试加一下
         self.datareader = datareader
@@ -48,19 +56,11 @@ class Network(nn.Module):
         self.policy = Policy(belief_size, 6, self.hidden_size, self.hidden_size)
 
         # init decoder
-        self.decoder = Decoder(self.policy, self.voc_size, self.hidden_size)
+        self.decoder = Decoder(self.policy, self.datareader.vocab, self.voc_size, self.hidden_size, self.config)
 
         # optimizer
         self.optimizer = Opitmzier(self.encoder, self.info_tracker, self.req_tracker, \
                                   self.chg_tracker, self.policy, self.decoder, self.args.lr)
-        self.optimizer_encoder = optim.Adam(
-          self.encoder.parameters(),
-          lr = self.args.lr
-        )
-        self.optimizer_decoder = optim.Adam(
-          self.decoder.parameters(),
-          lr = self.args.lr
-        )
 
 
     def train(self):
@@ -96,27 +96,18 @@ class Network(nn.Module):
                 # print data[3]
                 # print data[6]
                 # print data[7]
-                # continue
-                # zero_grad
-                # self._zero_grad()
 
+                # dialogue_recur
                 dialogue_loss, target, predict = self.recurr(data)
+
                 if type(dialogue_loss) == int:
                     continue
-                # else:
-                # # backward
-                #     dialogue_loss.backward()
-                #print dialogue_loss
+
                 total_loss += dialogue_loss.data[0]
                 count += 1
                 logging.info('count: {0}'.format(count))
-
-                # step
-
-                #self.optimizer.step()
-                # self.optimizer_encoder.step()
-                # self.optimizer_decoder.step()
             logging.info('avg_loss: {0}'.format(total_loss/(count+0.000000000001)))
+
 
     def _set_model_satate(self, state):
         if state == 'train':
@@ -133,6 +124,7 @@ class Network(nn.Module):
             self.chg_tracker.eval()
             self.policy.eval()
             self.decoder.eval()
+
 
     def _cuda_model(self):
         self.encoder = self._cuda_model_one(self.encoder)
@@ -215,9 +207,7 @@ class Network(nn.Module):
         predict = []
 
         ##
-
         for i in range(turn_number):
-            #
             self._set_model_satate('train')
             self._zero_grad()
             '''
@@ -277,7 +267,6 @@ class Network(nn.Module):
                 belief_t.append(torch.cat(tmp, 0))
 
             inf_belief_t = pre_belief
-
             # requestable slots
             for k in range(len(self.reqseg)-1):
 
@@ -345,6 +334,93 @@ class Network(nn.Module):
         return dialogue_loss, data[6], predict
 
 
+    def read(self, masked_source_t):
+        return self.encoder.forward(masked_source_t, None)
+
+
+    def track(self, pre_belief, masked_source, masked_target_tm1, srcfeat_t, tarfeat_tm1):
+
+        # belief tracking
+        # informable slots
+        belief_t = []
+        full_belief_t = []
+        for j in range(len(self.info_tracker.slots_box)):
+
+            # 当前slot的上一轮次的value的分布
+            slot_belief_value = pre_belief[self.infoseg[j]:self.infoseg[j+1]]
+
+            # 对ngram的position进行解码
+            slot_source_position = srcfeat_t[0][self.infoseg[j]:self.infoseg[j+1]]
+            value_source_position = srcfeat_t[1][self.infoseg[j]:self.infoseg[j+1]]
+            slot_target_position = tarfeat_tm1[0][self.infoseg[j]:self.infoseg[j+1]]
+            value_target_position = tarfeat_tm1[1][self.infoseg[j]:self.infoseg[j+1]]
+
+            # tracking
+            new_slot_belief_value = self.info_tracker.slots_box[j].forward(slot_belief_value, masked_source, masked_target_tm1, \
+                                                   None, None,\
+                                                   slot_source_position, value_source_position,\
+                                                   slot_target_position, value_target_position)
+
+            new_slot_belief_value = new_slot_belief_value.squeeze(0)
+            # full
+            full_belief_t.append(new_slot_belief_value)
+
+            # summary
+            tmp = [torch.sum(new_slot_belief_value[:-2]), new_slot_belief_value[-2], new_slot_belief_value[-1]]
+            belief_t.append(torch.cat(tmp, 0))
+
+        inf_belief_t = pre_belief
+
+        # requestable slots
+        for k in range(len(self.reqseg)-1):
+            # current feature idx
+            bn = self.infoseg[-1] + 2*k  # 排列在infor之后，每个占两位
+
+            # 解码位置信息
+            slot_source_position = srcfeat_t[0][bn]
+            value_source_position = srcfeat_t[1][bn]
+            slot_target_position = tarfeat_tm1[0][bn]
+            value_target_position = tarfeat_tm1[1][bn]
+
+            # tracking
+            new_slot_belief_value = self.req_tracker.slots_box[k].forward(masked_source, masked_target_tm1, None,\
+                                                                          None, slot_source_position,\
+                                                                          value_source_position, slot_target_position,\
+                                                                          value_target_position)
+
+            new_slot_belief_value = new_slot_belief_value.squeeze(0)
+
+            full_belief_t.append(new_slot_belief_value)
+
+            belief_t.append(new_slot_belief_value)
+
+        # offer-change tracker 是否变更了候选
+        minus_1 = [-1]
+        new_slot_belief_value = self.chg_tracker.slots_box[0].forward(masked_source, masked_target_tm1, None,\
+                                                                          None, minus_1, minus_1,\
+                                                                          minus_1, minus_1)
+
+        new_slot_belief_value = new_slot_belief_value.squeeze(0)
+
+        full_belief_t.append(new_slot_belief_value)
+        belief_t.append(new_slot_belief_value)
+        belief_t = torch.cat(belief_t, 0).float()
+        flatten_belief_t_tensor = torch.cat(full_belief_t, 0)
+        full_belief_t_numpy = [lst.data.numpy() for lst in full_belief_t]
+        #full_belief_t = torch.cat(full_belief_t, 0).data.numpy()
+
+        return full_belief_t_numpy, flatten_belief_t_tensor, belief_t
+
+
+    def talk(self, masked_intent_t, belief_t, degree_t, masked_source_t=None, masked_target_t=None, \
+             scoreTable=None, forced_sample=None):
+        responses, sample, prob = self.decoder.talk( masked_intent_t, belief_t, degree_t[-6:], masked_source_t, masked_target_t,
+                        scoreTable, forced_sample)
+        return responses, sample, prob
+
+
+
+
 class Encoder(nn.Module):
     def __init__(self, embed_size, hidden_size, vocab_size):
         super(Encoder, self).__init__()
@@ -356,7 +432,7 @@ class Encoder(nn.Module):
         self.lstm = nn.LSTM(self.embed_size, self.hidden_size, batch_first=True)#, bidirectional=True)
 
     def forward(self, input, lens):
-        outputs, (h_last, c_last) = self.sort_batch(input[:lens.data[0]])
+        outputs, (h_last, c_last) = self.sort_batch(input[:lens.data[0]]) if type(lens) != type(None) else self.sort_batch(input)
         #h_last = torch.sum(h_last, 0) * 0.5  # (1, h_s)
         #c_last = torch.sum(c_last, 0) * 0.5
         return h_last.squeeze(0), c_last.squeeze(0)
@@ -437,6 +513,10 @@ class CNNInfoTracker(nn.Module):
         for value in range(value_num-1):                                            # fixme 这里的-1到底该怎么替换
             #print value
             # source features
+            # print slot_source_position
+            # print source_ngram_feature
+            # print self._normalize_slice(slot_source_position, \
+            #                                                  source_ngram_feature.size()[1], value)
             slot_source_ngram_feature_value = torch.sum(\
                 source_ngram_feature[:,self._normalize_slice(slot_source_position, \
                                                              source_ngram_feature.size()[1], value),:], 1)
@@ -448,10 +528,10 @@ class CNNInfoTracker(nn.Module):
                                         source_utterance_feature], 1)  # (1, 5*h_s)
 
             # target features
-            #print slot_target_position
-            #print self._normalize_slice(slot_target_position, \
-                                                                 #pre_target_ngram_feature.size()[1], value)
-            #print pre_target_ngram_feature
+            # print slot_target_position
+            # print self._normalize_slice(slot_target_position, \
+            #                                                      pre_target_ngram_feature.size()[1], value)
+            # print pre_target_ngram_feature
             slot_target_ngram_feature_value = torch.sum(\
                 pre_target_ngram_feature[:,self._normalize_slice(slot_target_position, \
                                                                  pre_target_ngram_feature.size()[1], value),:], 1)
@@ -477,10 +557,13 @@ class CNNInfoTracker(nn.Module):
 
     def _normalize_slice(self, position_info, replace, value):
         new_list = []
+        if len(position_info[value]) == 0:
+            new_list.append(replace-1)
+            return new_list
         for n in position_info[value]:
-            if n != -1:
+            if (n != -1) & (n<=(replace-1)):
                 new_list.append(n)
-            else:
+            elif (n > (replace-1)) | (n == -1):
                 new_list.append(replace-1)
         return new_list
 
@@ -533,8 +616,8 @@ class CNNReqTracker(nn.Module):
         pre_target_ngram_feature = torch.cat([pre_target_ngram_feature, zero_tensor], 1)
 
         # new belief 对每个value的概率进行跟更新
-        assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
-        value_num = len(slot_source_position)
+        #assert len(slot_source_position)==len(value_source_position)==len(slot_target_position)==len(value_target_position)
+        #value_num = len(slot_source_position)
 
         # source features
         slot_source_ngram_feature_value = torch.sum(\
@@ -548,6 +631,10 @@ class CNNReqTracker(nn.Module):
                                     source_utterance_feature], 1)  # (1, 5*h_s)
 
         # target features
+        # print slot_target_position
+        # print self._normalize_slice(slot_target_position, \
+        #                                                      pre_target_ngram_feature.size()[1])
+        # print pre_target_ngram_feature
         slot_target_ngram_feature_value = torch.sum(\
             pre_target_ngram_feature[:,self._normalize_slice(slot_target_position, \
                                                              pre_target_ngram_feature.size()[1]),:], 1)
@@ -573,17 +660,20 @@ class CNNReqTracker(nn.Module):
 
     def _normalize_slice(self, position_info, replace, value=None):
         new_list = []
+        if len(position_info) == 0:
+            new_list.append(replace-1)
+            return new_list
         if value == None:
             for n in position_info:
-                if n != -1:
+                if (n != -1) & (n<=(replace-1)):
                     new_list.append(n)
-                else:
+                elif (n > (replace-1)) | (n == -1):
                     new_list.append(replace-1)
         else:
             for n in position_info[value]:
-                if n != -1:
+                if (n != -1) & (n<=(replace-1)):
                     new_list.append(n)
-                else:
+                elif (n > (replace-1)) | (n == -1):
                     new_list.append(replace-1)
         return new_list
 
@@ -609,8 +699,8 @@ class CNNEncoder(nn.Module):
 
     def forward(self, input, sentence_lens):
         # embedding
-        #embed = self.embedding(input[:sentence_lens.data[0]])  # (l, h_s)
-        embed = self.embedding(input)
+        embed = self.embedding(input[:sentence_lens.data[0]])  if type(sentence_lens) != type(None) else self.embedding(input)# (l, h_s)
+        #embed = self.embedding(input)
         # 1st conv
         conv1 = self._conv_and_pool(embed.unsqueeze(0), False)
 
@@ -619,7 +709,7 @@ class CNNEncoder(nn.Module):
 
         # 3rd conv
         conv3 = self._conv_and_pool(conv2)
-        return torch.cat([conv1, conv2], 2), conv3
+        return torch.cat([conv1, conv2], 2) , conv3
 
     def _conv_and_pool(self, input, pool=True):
         input = F.relu(self.conv2d_1(input.unsqueeze(0)))
@@ -644,12 +734,34 @@ class Policy(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, policy, voc_size, hidden_size):
+    def __init__(self, policy, vocab, voc_size, hidden_size, config):
         super(Decoder, self).__init__()
 
         # policy
         self.policy = policy
+
+        # vocab
+        self.vocab = vocab
+
+        # setting
+        self.topk           = config.topk
+        self.beamwidth      = config.beamwidth
+        self.repeat_penalty = config.repeat_penalty
+        self.token_reward   = config.token_reward
+        self.alpha          = config.alpha
+        self.q_limit        = 10000
+
+        # special token accumulation table
+        self.recordTable = {'s':{},'v':{}}
+        for idx in range(len(self.vocab)):
+            w = self.vocab[idx]
+            if w.startswith('[VALUE_'):
+                self.recordTable['v'][idx] = 0.0
+            elif w.startswith('[SLOT_'):
+                self.recordTable['s'][idx] = 0.0
+
         # parameters
+        self.hidden_size = hidden_size
         self.embed = nn.Embedding(voc_size, hidden_size)
         self.lstmcell = nn.LSTMCell(2 * hidden_size, hidden_size)
         self.linear = nn.Linear(hidden_size, voc_size)
@@ -693,6 +805,117 @@ class Decoder(nn.Module):
         return loss, predict_word
 
 
+    def talk(self, masked_intent_t, belief_t, degree_t, masked_source_t=None, masked_target_t=None,\
+             scoreTable=None, forced_sample=None):
+
+        sample_t = prob_t = None
+
+        action = self.policy.encode(belief_t, degree_t, masked_intent_t[0]).data.numpy()
+
+        # store end node
+        endnodes = []
+
+        # iterate through action
+        for a in range(action.shape[0]):
+            pre_endnode = len(endnodes)
+            number_required = min(  (self.topk+1)/action.shape[0],
+                                    self.topk-len(endnodes))
+
+            # hidden layers to be stored
+            h0 = np.zeros(self.hidden_size)
+            c0 = np.zeros(self.hidden_size)
+            # starting node
+            node = BeamSearchNode(masked_intent_t[0],masked_intent_t[1],None,1,0,1,\
+                    record=deepcopy(self.recordTable))
+            nodes= PriorityQueue()
+            # put it in the queue
+            nodes.put(( -node.eval(self.repeat_penalty,self.token_reward,\
+                    scoreTable,self.alpha), node))
+            qsize = 1
+            # start beam search
+
+            # intent h,c
+            (h, c) = masked_intent_t
+            while True:
+
+                # give up when decoding takes too long
+                if qsize>self.q_limit: break
+
+                # fetch the best node
+                score, n = nodes.get()
+
+                # if end of sentence token
+                if n.wordid==1 and n.prevNode!=None:
+                    endnodes.append((score,n))
+                    # if reach maximum # of sentences required
+                    if len(endnodes)-prev_endnode>=number_required:break
+                    else:   continue
+
+                # decode for one step using decoder
+                nextnodes = self.talk_forward(n,
+                        masked_intent_t, belief_t, degree_t, action[a,:], (h, c),
+                        scoreTable)
+                # put them into queue
+                for i in range(len(nextnodes)):
+                    score, nn = nextnodes[i]
+                    nodes.put( (score,nn) )
+                # increase qsize
+                qsize += len(nextnodes)-1
+
+        # choose nbest paths, back trace them
+        if len(endnodes)==0:
+            endnodes = [nodes.get() for n in range(self.topk)]
+        utts = []
+        for score,n in sorted(endnodes,key=operator.itemgetter(0)):
+            utt,att,gates = [],[],[]
+            utt.append(n.wordid)
+            # back trace
+            while n.prevNode!=None:
+                n = n.prevNode
+                utt.append(n.wordid)
+
+            utt,att,gates = utt[::-1],att[::-1],gates[::-1]
+            utts.append([utt,att,gates])
+        return utts, sample_t, prob_t
+
+
+    def talk_forward(self, n, masked_intent_t, belief_t, degree_t, action_t, h_t, scoreTable):
+
+        input_word = self.embed(variable_tensor([n.wordid], 'Long'))
+        action_t = variable_tensor(action_t, 'Float').view(1, -1)
+        h, c = self.lstmcell(torch.cat([input_word, action_t], 1), (n.h, n.c))
+        output = self.softmax(self.linear(h))
+
+        _, predict = torch.topk(output, self.beamwidth)
+
+        nextnodes = []
+        for pr in predict.data[0]:
+            if pr == 0:
+                continue
+
+            # loglikelihood of current word
+            logp = output[0][pr].data[0]
+
+            # update record for new node
+            new_record = deepcopy(n.record)
+            if new_record['s'].has_key(pr):
+                new_record['s'][pr] += 1
+            if new_record['v'].has_key(pr):
+                new_record['v'][pr] += 1
+
+            # create new node and score it
+            node = BeamSearchNode(h,c,n,pr,\
+                    n.logp+logp,n.leng+1,new_record)
+
+            # store nodes
+            nextnodes.append( \
+                    (-node.eval(self.repeat_penalty,self.token_reward,\
+                    scoreTable,self.alpha), node))
+
+        return nextnodes
+
+
+
 class Opitmzier(nn.Module):
     def __init__(self, encoder, info_tracker, req_tracker, chg_tracker, policy, deocder, lr):
         super(Opitmzier, self).__init__()
@@ -729,6 +952,36 @@ class Opitmzier(nn.Module):
         self.deocder_optimier.step()
 
 
+class BeamSearchNode(object):
+
+    def __init__(self,h,c,prevNode,wordid,logp,leng,record):
+        self.h = h
+        self.c = c
+        self.prevNode = prevNode
+        self.wordid = wordid
+        self.logp   = logp
+        self.leng   = leng
+        self.record = record
+
+    def eval(self, repeatPenalty, tokenReward, scoreTable, alpha=1.0):
+        reward = 0
+        # repeat penalty
+        if repeatPenalty=='inf':
+            # value repeat is not allowed
+            for k,v in self.record['v'].iteritems():
+                if v>1: reward -= 1000
+            # slot repeat is slightly allowed
+            for k,v in self.record['s'].iteritems():
+                if v>1: reward -= pow(v-1,2)*0.5
+        # special token reward
+        if tokenReward and scoreTable!=None:
+            for k,v in self.record['v'].iteritems():
+                if v>0 and scoreTable.has_key(k):
+                    reward += scoreTable[k]
+
+        return self.logp/float(self.leng-1+1e-6)+alpha*reward
+
+
 def variable_tensor(list, type=None):
     if type == 'Long':
         return Variable(torch.LongTensor(list)).cuda() if use_cuda else Variable(torch.LongTensor(list))
@@ -738,6 +991,8 @@ def variable_tensor(list, type=None):
         return Variable(list).cuda() if use_cuda else Variable(list)
 
 
+def flatten(lst):
+    return list(itertools.chain.from_iterable(lst))
 
 
 
